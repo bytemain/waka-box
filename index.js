@@ -1,20 +1,22 @@
 require("dotenv").config();
 const { WakaTimeClient, RANGE } = require("wakatime-client");
 const Octokit = require("@octokit/rest");
+const SDK = require("@yuque/sdk");
 
 const {
   GIST_ID: gistId,
   GH_TOKEN: githubToken,
-  WAKATIME_API_KEY: wakatimeApiKey
+  WAKATIME_API_KEY: wakatimeApiKey,
+  YUQUE_TOKEN: yuqueToken,
+  YUQUE_NAMESPACE: yuqueNamespace,
+  YUQUE_DOC_ID: yuqueDocId
 } = process.env;
 
 const wakatime = new WakaTimeClient(wakatimeApiKey);
 
-const octokit = new Octokit({ auth: `token ${githubToken}` });
-
 async function main() {
   const stats = await wakatime.getMyStats({ range: RANGE.LAST_7_DAYS });
-  await updateGist(stats);
+  await updateRemote(stats);
 }
 
 function trimRightStr(str, len) {
@@ -22,14 +24,71 @@ function trimRightStr(str, len) {
   return str.length > len ? str.substring(0, len - 3) + "..." : str;
 }
 
-async function updateGist(stats) {
+async function updateGist(content) {
+  if (!(gistId && githubToken)) {
+    console.info(`!(gistId && githubToken), skip`);
+    return;
+  }
+  const octokit = new Octokit({ auth: `token ${githubToken}` });
+
   let gist;
   try {
-    gist = await octokit.gists.get({ gist_id: gistId });
+    gist = await octokit.gists.get({
+      gist_id: gistId
+    });
   } catch (error) {
     console.error(`Unable to get gist\n${error}`);
   }
 
+  // Get original filename to update that same file
+  const filename = Object.keys(gist.data.files)[0];
+  await octokit.gists.update({
+    gist_id: gistId,
+    files: {
+      [filename]: {
+        filename: `📊 Weekly development breakdown`,
+        content: content
+      }
+    }
+  });
+}
+
+async function updateYuque(content) {
+  if (!(yuqueToken && yuqueNamespace && yuqueDocId)) {
+    console.info(`!(yuqueToken && yuqueNamespace && yuqueDocId), skip`);
+    return;
+  }
+
+  const client = new SDK({
+    token: yuqueToken,
+    handler: res => {
+      console.log(res);
+      return res.data.data;
+    }
+  });
+
+  // await client.docs.create({
+  //   namespace: yuqueNamespace,
+  //   data: {
+  //     title: `📊 Weekly development breakdown`,
+  //     slug: "breakdown",
+  //     body: content,
+  //     format: "markdown",
+  //     public: 1,
+  //   },
+  // });
+
+  await client.docs.update({
+    namespace: yuqueNamespace,
+    id: yuqueDocId,
+    data: {
+      title: `📊 Weekly development breakdown`,
+      body: content
+    }
+  });
+}
+
+async function updateRemote(stats) {
   const lines = [];
   for (let i = 0; i < Math.min(stats.data.languages.length, 5); i++) {
     const data = stats.data.languages[i];
@@ -48,19 +107,11 @@ async function updateGist(stats) {
   if (lines.length == 0) return;
 
   try {
-    // Get original filename to update that same file
-    const filename = Object.keys(gist.data.files)[0];
-    await octokit.gists.update({
-      gist_id: gistId,
-      files: {
-        [filename]: {
-          filename: `📊 Weekly development breakdown`,
-          content: lines.join("\n")
-        }
-      }
-    });
+    const content = lines.join("\n");
+    await updateGist(content);
+    await updateYuque(content);
   } catch (error) {
-    console.error(`Unable to update gist\n${error}`);
+    console.error(`Unable to update remote\n${error.stack}`);
   }
 }
 
