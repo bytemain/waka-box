@@ -67,23 +67,15 @@ async function updateYuque(content) {
     }
   });
 
-  // await client.docs.create({
-  //   namespace: yuqueNamespace,
-  //   data: {
-  //     title: `📊 Weekly development breakdown`,
-  //     slug: "breakdown",
-  //     body: content,
-  //     format: "markdown",
-  //     public: 1,
-  //   },
-  // });
-
   await client.docs.update({
     namespace: yuqueNamespace,
     id: yuqueDocId,
     data: {
       title: `📊 Weekly development breakdown`,
-      body: content
+      body: `\`\`\`text
+${content}
+\`\`\`
+`
     }
   });
 }
